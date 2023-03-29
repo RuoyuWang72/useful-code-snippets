@@ -1,6 +1,6 @@
 using Lux, NNlib, Optimisers, Random, Statistics, Zygote, Plots
 
-model = Lux.Chain(Lux.Dense(1 => 100, relu), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 1))
+model = Lux.Chain(Lux.Dense(1 => 100, relu), Lux.Dense(100 => 100, tanh), Lux.Dense(100 => 100, sigmoid), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 100, relu), Lux.Dense(100 => 1))
 opt = ADAM(0.01)
 
 function loss_function(model, ps, st, data)
@@ -16,8 +16,8 @@ vjp_rule = Lux.Training.ZygoteVJP()
 
 function main(tstate::Lux.Training.TrainState, vjp::Lux.Training.AbstractVJP, train_data::Tuple,
     val_data::Tuple, epochs::Int)
-    train_data = train_data .|> gpu
-    val_data = val_data .|> gpu
+    train_data = train_data .|> Lux.gpu
+    val_data = val_data .|> Lux.gpu
 
     val_loss = Inf
     final_tstate = 0
@@ -26,7 +26,7 @@ function main(tstate::Lux.Training.TrainState, vjp::Lux.Training.AbstractVJP, tr
                                                                 train_data, tstate)
         @info epoch=epoch loss=loss
         tstate = Lux.Training.apply_gradients(tstate, grads)
-        val_fit = Lux.cpu(Lux.apply(tstate.model, gpu(val_data[1]), tstate.parameters, tstate.states)[1])
+        val_fit = Lux.cpu(Lux.apply(tstate.model, Lux.gpu(val_data[1]), tstate.parameters, tstate.states)[1])
         val_loss_ = sum(abs2, val_data[1].- val_fit)
         if val_loss_ < val_loss
             val_loss = val_loss_
@@ -38,13 +38,18 @@ end
 
 
 function generate_data(rng::AbstractRNG)
-    x = reshape(collect(range(0, 10, 1000)), (1, 1000))
-    y = sin.(x) .+ randn(rng, (1, 1000)) .* 0.1f0
+    x = reshape(collect(range(0, 1000, 1000)), (1, 1000))
+    # y = sin.(x) .+ randn(rng, (1, 1000)) .* 0.1f0
+    y = 60 .* sin.(1e-2 .* x) .+ 200
     return (x, y)
 end
 
+normalization(array, reference_array) = 2 .* (array .- minimum(reference_array)) ./ (maximum(reference_array) - minimum(reference_array)) .- 1
+
 
 (x, y) = generate_data(rng)
+y = normalization(y, y)
+x = normalization(x, x)
 (x_train, y_train), (x_val, y_val) = splitobs((x, y); at=0.8, shuffle=false)
 (x_val, y_val), (x_test, y_test) = splitobs((x_val, y_val); at=0.5, shuffle=false)
 
